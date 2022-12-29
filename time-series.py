@@ -3,13 +3,19 @@ import datetime
 from pandas.api.types import is_datetime64_any_dtype as is_datetime
 import numpy as np
 
-
+# formats the provided column to datetime64
 def format_column(dframe, date_col):
+    # if date_col is already formatted correctly, then we don't need to do anything
+    if dframe[date_col].dtype == 'datetime64[ns]':
+        return dframe[date_col]
+    
+    # case where we are dealing with float or int values
+    if dframe[date_col].dtype == 'float64' or dframe[date_col].dtype == 'int64':
+        return -1
     try:
-        dframe[date_col] = pd.to_datetime(dframe[date_col], infer_datetime_format=True)
-        return 1
+        dframe[date_col] = pd.to_datetime(dframe[date_col], errors='coerce', infer_datetime_format=True)
+        return dframe[date_col]
     except:
-        print("This column cannot be formatted to the type: 'datetime64'")
         return -1
     
     
@@ -37,7 +43,7 @@ def any_valid(dframe):
 # contains a series of parsable dates which have over 90% non-null 
 # values and a chronological series of dates.
 # returns: a list of all date columns in dframe, and an empty list if none exist
-def find_date_columns(dframe): # INCOMPLETE
+def find_date_columns(dframe): 
     # store date columns in this list
     d_ls = []
 
@@ -45,17 +51,18 @@ def find_date_columns(dframe): # INCOMPLETE
     for col in dframe.columns:
         if dframe[col].dtype == 'datetime64[ns]': 
             percent_datetime = dframe[col].notnull().mean()
-            if percent_datetime >= 0.9 and (dframe[col].is_monotonic_increasing or dframe[col].is_monotonic_decreasing):
+            if percent_datetime >= 0.9: #and (dframe[col].is_monotonic_increasing or dframe[col].is_monotonic_decreasing):
                 d_ls.append(col)
                 continue
-        column_values = pd.to_datetime(dframe[col], errors='coerce')
-        percent_datetime = column_values.notnull().mean()
-        print("percentage: " + str(percent_datetime))
-        if(col == 'Date'):
-            print("YES")
-        if percent_datetime >= 0.9 and (dframe[col].is_monotonic_increasing or dframe[col].is_monotonic_decreasing):
-            d_ls.append(col)
+        
+        column_values = format_column(dframe, col)
+        
+        if isinstance(column_values, int):
             continue
+
+        percent_datetime = column_values.notnull().mean()
+        if percent_datetime >= 0.9: #and (dframe[col].is_monotonic_increasing or dframe[col].is_monotonic_decreasing):
+            d_ls.append(col)
     return d_ls
 
 def groupby(dframe, group_factor): # group by date, month, year, week
@@ -67,8 +74,8 @@ def groupby(dframe, group_factor): # group by date, month, year, week
 
 
 # testing
-
 df = pd.read_csv('datasets/1979-2021.csv')
-# print(df.dtypes)
-print(any_valid(df))
+
+# print(df.dtypes)  
+print(find_date_columns(df))
 
