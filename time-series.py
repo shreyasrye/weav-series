@@ -65,17 +65,60 @@ def find_date_columns(dframe):
             d_ls.append(col)
     return d_ls
 
-def groupby(dframe, group_factor): # group by date, month, year, week
-    # Current Pseudocode:
-        # - check rough validity first
-        # - if roughly valid, find a date column (and simultaneously determine if fully valid)
-        # - if a column i s found, preprocess data (if needed) and then create a time series by grouping
-    return None
+
+# group factor can be changed to week, month and year
+# group_operation takes 'sum' and 'average'
+def time_series(dframe, date_column=None, group_factor='day', group_operation='sum'): 
+    # if the date column is not entered by default, take the first one that exists in dframe
+    if not any_valid(dframe):
+        print("A time series cannot be created from this data")
+        return
+    if date_column == None:
+        cols = find_date_columns(dframe)
+        if cols:
+            date_column = cols[0]
+        else:
+            print("A time series cannot be created from this data")
+            return
+    
+    if dframe[date_column].dtype != 'datetime64[ns]':
+        format_column(dframe, date_column)
+
+    if group_factor == 'day':
+        if group_operation == 'sum':
+            return df.groupby(df[date_column].dt.date).sum()
+        elif group_operation == 'average':
+            return df.groupby(df[date_column].dt.date).mean()
+        else:
+            print("Invalid group operation")
+    elif group_factor == 'week':
+        if group_operation == 'sum':
+            return df.groupby(df[date_column].dt.week).sum()
+        elif group_operation == 'average':
+            return df.groupby(df[date_column].dt.week).mean()
+        else:
+            print("Invalid group operation")
+    elif group_factor == 'month':
+        if group_operation == 'sum':
+            return df.groupby(df[date_column].dt.month).sum()
+        elif group_operation == 'average':
+            return df.groupby(df[date_column].dt.month).mean()
+        else:
+            print("Invalid group operation")
+    elif group_factor == 'year':
+        if group_operation == 'sum':
+            return df.groupby(df[date_column].dt.year).sum()
+        elif group_operation == 'average':
+            return df.groupby(df[date_column].dt.year).mean()
+        else:
+            print("Invalid group operation")
+    else:
+        print("Invalid group factor")
 
 
 # testing
-df = pd.read_csv('datasets/1979-2021.csv')
+df = pd.read_csv('datasets/PowerGeneration.csv')
 
 # print(df.dtypes)  
-print(find_date_columns(df))
+print(time_series(df, None, 'week', 'average'))
 
