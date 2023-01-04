@@ -64,17 +64,21 @@ def reformat_date(dframe, date_col):
     return dframe
 
 
-# group factor can be 'day', 'week', 'month' and 'year'
-# group_operation takes 'sum' and 'average' for now
-def time_series(dframe, frequency=None, group_operation='sum', date_column=None, value_columns=[]): 
+# frequency inputs:
+    #  'D': For a daily time series
+    #  'W': For a weekly time series
+    #  'M': For a monthly time series
+    #  'Y': For a yearly time series
+# operation inputs:
+    # 'sum': for summation of data at every frequency
+    # 'average': for the mean of data at every  frequency
+def time_series(dframe, frequency=None, operation='sum', value_columns=[], date_column=None): 
     # if the date column is not entered by default, take the first one that exists in dframe
     if not any_valid(dframe):
         print("A time series cannot be created from this data")
         return
 
     cats = categorize_columns(dframe)
-
-    disregard = cats[2]
 
     # Find and format date column to base the time series on
     if date_column == None:
@@ -89,43 +93,19 @@ def time_series(dframe, frequency=None, group_operation='sum', date_column=None,
         value_columns = cats[1]
 
     # Generate the time series
-    if frequency == 'day':
-        if group_operation == 'sum':
-            grouped = dframe.groupby(dframe[date_column].dt.month)
-            grouped_sum = grouped[value_columns].sum()
-            print(type(grouped_sum))
-            # series = grouped_sum.apply(lambda x: x[date_column].dt.strftime('%B') + ' ' + str(x[date_column].dt.year.iloc[0]))
-            series = grouped_sum.apply(lambda x: reformat_date(x, date_column))
-            # series.drop(columns=disregard)
-            return series
-        elif group_operation == 'average':
-            return df.groupby(df[date_column].dt.date).mean()
-        else:
-            print("Invalid group operation")
-    elif frequency == 'week':
-        if group_operation == 'sum':
-            return df.groupby(df[date_column].dt.week).sum()
-        elif group_operation == 'average':
-            return df.groupby(df[date_column].dt.week).mean()
-        else:
-            print("Invalid group operation")
-    elif frequency == 'month':
-        if group_operation == 'sum':
-            return df.groupby(df[date_column].dt.month).sum()
-        elif group_operation == 'average':
-            return df.groupby(df[date_column].dt.month).mean()
-        else:
-            print("Invalid group operation")
-    elif frequency == 'year':
-        if group_operation == 'sum':
-            return df.groupby(df[date_column].dt.year).sum()
-        elif group_operation == 'average':
-            return df.groupby(df[date_column].dt.year).mean()
-        else:
-            print("Invalid group operation")
-    else:
-        print("Invalid group factor")
+    dframe.set_index(date_column, inplace=True)
 
+    try:
+        if operation == 'sum':
+            series = dframe[value_columns].resample(frequency).sum()
+        elif operation == 'average':
+            series = dframe[value_columns].resample(frequency).mean()
+        else:
+            print("Invalid operation provided: " + operation)
+    except ValueError:
+        print("Invalid frequency: " + frequency)
+
+    return series
 
 # Returns different properties of an inputted time series
 def analysis(ts):
@@ -133,11 +113,9 @@ def analysis(ts):
 
 
 # testing
-df = pd.read_csv('datasets/pr_transactions.csv')
 
-# print(find_date_columns(df))
-# print(df.dtypes)  
-ts = time_series(df, 'day', 'sum')
+df = pd.read_csv('datasets/1979-2021.csv')
+
+ts = time_series(df, 'W', 'sum', ['United States(USD)'])
 print(ts)
-# print(analysis(ts))
 
