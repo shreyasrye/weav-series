@@ -1,23 +1,7 @@
 import pandas as pd
 import datetime
-from pandas.api.types import is_datetime64_any_dtype as is_datetime
 import numpy as np
 
-# formats the provided column to datetime64
-def format_column(dframe, date_col):
-    # if date_col is already formatted correctly, then we don't need to do anything
-    if dframe[date_col].dtype == 'datetime64[ns]':
-        return dframe[date_col]
-    
-    # case where we are dealing with float or int values
-    if dframe[date_col].dtype == 'float64' or dframe[date_col].dtype == 'int64':
-        return -1
-    try:
-        dframe[date_col] = pd.to_datetime(dframe[date_col], errors='coerce', infer_datetime_format=True)
-        return dframe[date_col]
-    except:
-        return -1
-    
     
 # returns whether or not there exists at least one row from dframe can be constructed into a time series
 def any_valid(dframe): 
@@ -27,7 +11,7 @@ def any_valid(dframe):
     for col in dframe.columns:
         if dframe[col].dtype == 'datetime64[ns]':
             return True
-        if(pd.to_datetime(df[col], errors='coerce', infer_datetime_format=True).notnull().any()):
+        if pd.to_datetime(df[col], errors='coerce', infer_datetime_format=True).notnull().any():
             return True
         return False
 
@@ -38,74 +22,101 @@ def any_valid(dframe):
     # return intersection of booleans
     return hasDate and hasNum
 
-# Assuming a dataframe is roughly valid, find_date_column() 
-# checks if there exists 1 or more columns in dframe that 
-# contains a series of parsable dates which have over 90% non-null 
-# values and a chronological series of dates.
-# returns: a list of all date columns in dframe, and an empty list if none exist
-def find_date_columns(dframe): 
-    # store date columns in this list
-    d_ls = []
 
-    # A column that has date values stored as datetime64[ns] makes our problem  easy
+# formats the provided column to datetime64
+def format_column(dframe, date_col):
+    # if date_col is already formatted correctly, then we don't need to do anything
+    if dframe[date_col].dtype == 'datetime64[ns]':
+        return dframe[date_col]
+    
+    # case where we are dealing with float or int values
+    if dframe[date_col].dtype == 'float64' or dframe[date_col].dtype == 'int64':
+        return -1
+    temporary_conversion = pd.to_datetime(dframe[date_col], errors='coerce', infer_datetime_format=True)
+    percent_datetime = temporary_conversion.notnull().mean()
+    if percent_datetime >= 0.9:
+        dframe[date_col] = temporary_conversion
+        return dframe[date_col]
+    return -1
+
+# iterates through each column in the dataframe and 
+# adds date columns, value columns and invalid columns to respective lists
+def categorize_columns(dframe):
+    d_ls, vals, inv = [], [], []
+
     for col in dframe.columns:
-        if dframe[col].dtype == 'datetime64[ns]': 
-            percent_datetime = dframe[col].notnull().mean()
-            if percent_datetime >= 0.9: #and (dframe[col].is_monotonic_increasing or dframe[col].is_monotonic_decreasing):
-                d_ls.append(col)
-                continue
-        
-        column_values = format_column(dframe, col)
-        
-        if isinstance(column_values, int):
+        percent_valid = dframe[col].notnull().mean()
+        if percent_valid < 0.5:
+            inv.append(col)
             continue
+        elif dframe[col].dtype == 'float64' or dframe[col].dtype == 'int64':
+            vals.append(col)
+        elif dframe[col].dtype != 'datetime64[ns]': 
+            formatted = format_column(dframe, col)
+            if not isinstance(formatted, int):
+                dframe[col] = formatted
+                d_ls.append(col)
+        
+    return (d_ls, vals, inv)
 
-        percent_datetime = column_values.notnull().mean()
-        if percent_datetime >= 0.9: #and (dframe[col].is_monotonic_increasing or dframe[col].is_monotonic_decreasing):
-            d_ls.append(col)
-    return d_ls
+def reformat_date(dframe, date_col):
+    dframe["Month and Year"] = df[date_col].dt.strftime("%b %Y")
+    return dframe
 
 
-# group factor can be changed to week, month and year
-# group_operation takes 'sum' and 'average'
-def time_series(dframe, date_column=None, group_factor='day', group_operation='sum'): 
+# group factor can be 'day', 'week', 'month' and 'year'
+# group_operation takes 'sum' and 'average' for now
+def time_series(dframe, frequency=None, group_operation='sum', date_column=None, value_columns=[]): 
     # if the date column is not entered by default, take the first one that exists in dframe
     if not any_valid(dframe):
         print("A time series cannot be created from this data")
         return
+
+    cats = categorize_columns(dframe)
+
+    disregard = cats[2]
+
+    # Find and format date column to base the time series on
     if date_column == None:
-        cols = find_date_columns(dframe)
+        cols = cats[0]
         if cols:
             date_column = cols[0]
         else:
-            print("A time series cannot be created from this data")
+            print("A time series cannot be created from this data: there are no date columns")
             return
-    
-    if dframe[date_column].dtype != 'datetime64[ns]':
-        format_column(dframe, date_column)
 
-    if group_factor == 'day':
+    if not value_columns:
+        value_columns = cats[1]
+
+    # Generate the time series
+    if frequency == 'day':
         if group_operation == 'sum':
-            return df.groupby(df[date_column].dt.date).sum()
+            grouped = dframe.groupby(dframe[date_column].dt.month)
+            grouped_sum = grouped[value_columns].sum()
+            print(type(grouped_sum))
+            # series = grouped_sum.apply(lambda x: x[date_column].dt.strftime('%B') + ' ' + str(x[date_column].dt.year.iloc[0]))
+            series = grouped_sum.apply(lambda x: reformat_date(x, date_column))
+            # series.drop(columns=disregard)
+            return series
         elif group_operation == 'average':
             return df.groupby(df[date_column].dt.date).mean()
         else:
             print("Invalid group operation")
-    elif group_factor == 'week':
+    elif frequency == 'week':
         if group_operation == 'sum':
             return df.groupby(df[date_column].dt.week).sum()
         elif group_operation == 'average':
             return df.groupby(df[date_column].dt.week).mean()
         else:
             print("Invalid group operation")
-    elif group_factor == 'month':
+    elif frequency == 'month':
         if group_operation == 'sum':
             return df.groupby(df[date_column].dt.month).sum()
         elif group_operation == 'average':
             return df.groupby(df[date_column].dt.month).mean()
         else:
             print("Invalid group operation")
-    elif group_factor == 'year':
+    elif frequency == 'year':
         if group_operation == 'sum':
             return df.groupby(df[date_column].dt.year).sum()
         elif group_operation == 'average':
@@ -116,9 +127,17 @@ def time_series(dframe, date_column=None, group_factor='day', group_operation='s
         print("Invalid group factor")
 
 
-# testing
-df = pd.read_csv('datasets/PowerGeneration.csv')
+# Returns different properties of an inputted time series
+def analysis(ts):
+    return ts.describe()
 
+
+# testing
+df = pd.read_csv('datasets/pr_transactions.csv')
+
+# print(find_date_columns(df))
 # print(df.dtypes)  
-print(time_series(df, None, 'week', 'average'))
+ts = time_series(df, 'day', 'sum')
+print(ts)
+# print(analysis(ts))
 
