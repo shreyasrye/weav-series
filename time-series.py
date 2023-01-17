@@ -1,16 +1,22 @@
 import pandas as pd
 import datetime
 import numpy as np
-import math
 
 
-frequencies = { # can have many more options, needs to change #TODO
-    'T': pd.offsets.Minute,# minute
-    'H': pd.offsets.Hour, # hour
-    'D': pd.offsets.Day, # day
-    'W': pd.offsets.Week, # week
-    'M': pd.offsets.MonthBegin, # month
-    'Y': pd.offsets.Day(365)  # year
+# The values of each frequency in terms of seconds
+frequency_multipliers = { 
+    'N': 1/1000000000,
+    'U': 1/1000000,
+    'L': 1/1000,
+    'S': 1,
+    'T': 60,# minute
+    'H': 3600, # hour
+    'D': 86400, # day
+    'B': 86400,
+    'W': 7*86400, # week
+    'M': 30.5*7*86400, # month
+    'Q': 3*30.5*7*86400,
+    'Y': 365.25*86400  # year
 }
 
 
@@ -18,35 +24,28 @@ possible_operations = ['sum', 'mean', 'min', 'max', 'std', 'first', 'last', \
 'median', 'var', 'sem', 'skew', 'quantile']
 
 
-# If the date column in generate_time_series() is not specified and there are 
-# multiple date columns, find and return the one with the highest frequency
-def find_best_date_column(d_cols):
-    # TODO
-    
-    return -1
-
 # Checks the validity of operation and frequency inputs, and 
-def is_time_series_compatible(dframe, d_col=None):
+def is_time_series_compatible(dframe, cat_columns):
+    if 'd' not in cat_columns.keys():
+        return False
 
-    date_columns, hasContinuousDateColumn, hasNum = [], False, False
+    hasContinuousDateColumn, hasNum = False, False
     
-    # if the user has provided a date column, then that will be the only 
-    # date column that is checked to have a constant interval
-    if d_col:
-        d_col = format_column(dframe, d_col)
-        date_columns = [dframe[d_col]]
-    #otherwise, check all date columns
-    else:
-        date_columns =  categorize_columns(dframe)['d']
+    date_columns =  cat_columns['d']
 
+    # check for regular data (i.e. consistent intervals between dates)
     for d in date_columns:
         diffs = dframe[d].diff()
         interval = diffs.value_counts()
-        # If there exist more than 3 different intervals, say that the dates aren't applicable
+        # If there exist more than 7 different intervals, say that the dates aren't applicable
         if len(interval) > 0 and len(interval) < 7:
             hasContinuousDateColumn = True
             break
-
+    # check for irregular data (for example, timestamp data0) 
+    # TODO this is set to always true for now, until I find a way to handle irregular data
+        else:
+            hasContinuousDateColumn = True
+            break
     # check for numerical values
     if any(dframe.dtypes == 'int64') or any(dframe.dtypes == 'float64'):
         hasNum = True
@@ -89,6 +88,11 @@ def categorize_columns(dframe):
                     column_dict['d'].append(col)
                 else:
                     column_dict['d'] = [col]
+        elif dframe[col].dtype == 'datetime64[ns]': 
+            if 'd' in column_dict.keys():
+                column_dict['d'].append(col)
+            else:
+                column_dict['d'] = [col]
         else: # others are miscellaneous
             if 'm' in column_dict.keys():
                 column_dict['m'].append(col)
@@ -97,85 +101,70 @@ def categorize_columns(dframe):
     return column_dict
 
 
- # check if the frequency provided is lower than the frequency of the date column   
+# Given date columns, return a dictionary of the modes of the intervals of each one
+def find_date_intervals(dframe, d_cols: list):
+    modes = {}
+    for col in d_cols:
+        diffs = dframe[col].diff()
+        # take the mode of the differences in each column
+        modes[col] = diffs.mode()[0]
+
+    return modes
+    
+
+ # check if the frequency provided is lower than the frequency of the date column
 def compare_frequencies(dframe, desired_freq, date_column):
     try:
         f_num = int(desired_freq[0])
     # A ValueError means that no numerical indicator exists
     except ValueError:
-        desired_frequency_offset = pd.tseries.frequencies.to_offset(desired_freq)
+        desired_frequency_offset = frequency_multipliers[desired_freq[1:]]
     # separate numerical indicator to multiply the offset by that amount
     else:
-        desired_frequency_offset = pd.tseries.frequencies.to_offset(desired_freq)*f_num
+        desired_frequency_offset = frequency_multipliers[desired_freq[1:]]*f_num
 
-    date_column_freq = pd.infer_freq(dframe[date_column])
-    if not date_column_freq:
-        print("Frequency of the date column is not defined.")
-        return
+    # Find the most common difference between dates in date_column in seconds
+    date_col_modes = find_date_intervals(dframe,[date_column])
+    date_freq_offset = date_col_modes[date_column].total_seconds()
+
+    # Now, both values are converted to seconds, so they can be compared
+    return desired_frequency_offset >= date_freq_offset
+
+
+# Generates a time series
+def generate_time_series(dframe, frequency, operation=None, value_columns=[], date_column=None): 
     
-    date_col_offset = pd.tseries.frequencies.to_offset(date_column_freq)
-    # True if the desired frequency has offsets that are larger than those of the date column
-    is_down_sampling = desired_frequency_offset >= date_col_offset
-    if not is_down_sampling:
-        return False
-
-
-# finds and returns the frequency of a provided date column
-def find_frequency(dc):
-    return
-
-
-def find_offset(freq):
-    if not isinstance(freq, str):
-        print("Invalid Frequency: ", freq)
-        return -1
-    # Check if there is a numerical indicator before the frequency type
-    try:
-        f_num = freq[0]
-    # A ValueError means that no numerical indicator exists
-    except ValueError:
-        return frequencies[freq](1)
-    # separate numerical indicator from frequency so that dictionary can be accessed
-    freq = freq[1:]
-    return frequencies[freq](int(f_num))
-
-
-# frequency inputs:
-    #  'day': For a daily time series
-    #  'week': For a weekly time series
-    #  'month': For a monthly time series
-    #  'year': For a yearly time series
-# operation inputs:
-    # 'sum': for summation of data at every frequency
-    # 'average': for the mean of data at every  frequency
-def generate_time_series(dframe, frequency=None, operation=None, value_columns=[], date_column=None): 
-    # if the date column is not entered by default, take the first one that exists in dframe
-
-    #TODO : 
-    # if no frequency is provided, do all possible frequencies
-
-    # if frequency not in frequencies:
-    #     print("Invalid frequency: " + frequency)
-    #     return False
-
     if operation and operation not in possible_operations:
         print("Invalid Operation: ", operation)
-        return
+        return 
+    
+    f_num = frequency[0]
+    try: 
+        f_num = int(f_num)
+    except ValueError:
+        isolated_frequency = frequency
+    else:
+        isolated_frequency = frequency[1:]
+    if isolated_frequency not in frequency_multipliers.keys():
+        print("Invalid frequency: ", frequency)
+        return 
 
-    if not is_time_series_compatible(dframe):
+    # categorize (and format) the columns of importance
+    cats = categorize_columns(dframe)
+
+    if not is_time_series_compatible(dframe, cats):
         print("A time series cannot be created from this data")
         return
 
-    cats = categorize_columns(dframe) 
-
-    # Find and format date column to base the time series on 
+    # If not specified, find the date column with the highest frequency
     if not date_column:
-        date_column = find_best_date_column(cats['d'])
+        modes = find_date_intervals(dframe, cats['d'])
+        date_column = min(modes, key=modes.get)
 
-    # check if the frequency provided is lower than the frequency of the date column TODO
-    # if not compare_frequencies(dframe, frequency, date_column):
-    #     print("This frequency is not applicable for this dataframe: pick a lower frequency")
-    #     return  
+    # check if the frequency provided is lower than the frequency of the date column 
+    if not compare_frequencies(dframe, frequency, date_column):
+        print("This frequency is not applicable for this dataframe: pick a lower frequency")
+        return  
 
     # if the set of value columns are given, check if they exist in the dataframe first, then proceed
     if value_columns:
@@ -202,17 +191,17 @@ def generate_time_series(dframe, frequency=None, operation=None, value_columns=[
 
 
 # Returns different properties of an inputted time series # TODO
-def analysis(ts):
+def analyze(ts):
     return ts.describe()
-
-
+    # Set the index to the date column
+    
 # Running
 
 df = pd.read_csv('datasets/1979-2021.csv')
 
-ts = generate_time_series(df, '2M', None , ['United States(USD)'], 'Date')
-print(ts)
+ts = generate_time_series(df, '3M', None , ['United States(USD)'])
+if ts is not None:
+    print(ts)
+    # print(analyze(ts))  # uncomment for different format
 
-
-# Property-based testing TODO
 
