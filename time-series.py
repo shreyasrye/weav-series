@@ -2,7 +2,6 @@ import pandas as pd
 import datetime
 import numpy as np
 
-
 # The values of each frequency in terms of seconds
 frequency_multipliers = { 
     'N': 1/1000000000,
@@ -112,7 +111,7 @@ def find_date_intervals(dframe, d_cols: list):
     return modes
     
 
- # check if the frequency provided is lower than the frequency of the date column
+# check if the frequency provided is lower than the frequency of the date column
 def compare_frequencies(dframe, desired_freq, date_column):
     try:
         f_num = int(desired_freq[0])
@@ -197,11 +196,13 @@ def analyze(ts):
     
 # Running
 
-df = pd.read_csv('datasets/1979-2021.csv')
+df = pd.read_csv('datasets/pr_transactions.csv')
 
-ts = generate_time_series(df, '3M', None , ['United States(USD)'])
+ts = generate_time_series(df, '5D', None, ['Amount'])
 if ts is not None:
     print(ts)
     # print(analyze(ts))  # uncomment for different format
+
+
 
 
