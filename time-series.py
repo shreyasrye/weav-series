@@ -198,7 +198,7 @@ def analyze(ts):
 
 df = pd.read_csv('datasets/pr_transactions.csv')
 
-ts = generate_time_series(df, '5D', None, ['Amount'])
+ts = generate_time_series(df, 'Y', None, ['Amount'])
 if ts is not None:
     print(ts)
     # print(analyze(ts))  # uncomment for different format
