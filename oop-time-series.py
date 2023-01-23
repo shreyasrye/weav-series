@@ -1,24 +1,17 @@
 import pandas as pd
 import datetime
 import numpy as np
+import math
 
 
-
-class TimeSeriesData(pd.DataFrame) :
-
-    date_frequency = None
-    is_irregular = False
-
-    def __init__(self, dataframe):
-        super().__init__(dataframe)
-
-        
-class TimeSeries:
+class TimeSeries():
     
     # Fields
     dframe, time_series, frequency, agg_operations, date_column = None, None, None, None, None
     value_columns = []
     is_irregular = False
+    interpolation_method = 'linear'
+    validity_threshold = 0.4
     frequency_multipliers = { 
         'N': 1/1000000000,
         'U': 1/1000000,
@@ -39,7 +32,7 @@ class TimeSeries:
 
     def __init__(self, dataframe, frequency: str, operation=None, value_columns=[], date_column=None):
         self.dframe = dataframe
-        
+
         # Preliminary checks for the provided desired frequency and operation(s)
         if frequency:
             self.frequency = frequency
@@ -54,7 +47,6 @@ class TimeSeries:
             print("Invalid frequency")
             return 
 
-        
         if operation:
             self.agg_operations = operation
         elif operation and operation not in self.possible_operations:
@@ -106,6 +98,10 @@ class TimeSeries:
         resampler = self.dframe[self.value_columns].resample(self.frequency)
         # apply the respective aggregate function(s) to the grouping
         self.time_series = resampler.agg(self.agg_operations)
+        
+        #interpolate missing values 
+        for vc in self.value_columns:
+            self.time_series[vc] = self.time_series[vc].interpolate(method=self.interpolation_method)
 
 
     # Displays the generated time series
@@ -130,7 +126,7 @@ class TimeSeries:
             f_num = int(desired_freq[0])
         # A ValueError means that no numerical indicator exists
         except ValueError:
-            desired_frequency_offset = self.frequency_multipliers[desired_freq[1:]]
+            desired_frequency_offset = self.frequency_multipliers[desired_freq]
         # separate numerical indicator to multiply the offset by that amount
         else:
             desired_frequency_offset = self.frequency_multipliers[desired_freq[1:]]*f_num
@@ -149,7 +145,7 @@ class TimeSeries:
 
         hasContinuousDateColumn, hasNum = False, False
         
-        date_columns =  cat_columns['d']
+        date_columns = cat_columns['d']
 
         # check for regular data (i.e. consistent intervals between dates)
         for d in date_columns:
@@ -159,11 +155,10 @@ class TimeSeries:
             if len(interval) > 0 and len(interval) < 7:
                 hasContinuousDateColumn = True
                 break
-        # check for irregular data (for example, timestamp data0) 
-        # TODO this is set to always true for now, until I find a way to handle irregular data
+        # check for irregular data (for example, timestamp data) 
             else:
+                # self.is_irregular = True
                 hasContinuousDateColumn = True
-                break
         # check for numerical values
         if any(dframe.dtypes == 'int64') or any(dframe.dtypes == 'float64'):
             hasNum = True
@@ -193,7 +188,17 @@ class TimeSeries:
         column_dict = {}
 
         for col in dframe.columns:
-            if dframe[col].dtype == 'float64' or dframe[col].dtype == 'int64':
+
+            percent_null = dframe[col].isnull().mean()
+            percent_zero = dframe[col].eq(0).mean()
+            percent_empty = dframe[col].eq('').mean()
+            # Checks whether any of the percentages above fall over the threshold, in which case they will be disregarded
+            if max(percent_null, percent_zero, percent_empty) > self.validity_threshold:
+                if 'u' in column_dict.keys():
+                    column_dict['u'].append(col)
+                else:
+                    column_dict['u'] = [col]
+            elif dframe[col].dtype == 'float64' or dframe[col].dtype == 'int64':
                 if 'v' in column_dict.keys():
                     column_dict['v'].append(col)
                 else:
@@ -221,5 +226,5 @@ class TimeSeries:
     
 
 df = pd.read_csv('datasets/pr_transactions.csv')
-ts = TimeSeries(df, '5D', None, ['Amount'])
+ts = TimeSeries(df, '3D', 'mean')
 print(ts.display())
