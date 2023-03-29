@@ -70,34 +70,44 @@ def format_column(dframe, date_col):
 
 # iterates through each column in the dataframe and 
 # adds date columns, value columns and invalid columns to respective lists
-def categorize_columns(dframe):
-    column_dict = {}
+def categorize_columns(dframe, validity_threshold):
+        column_dict = {}
 
-    for col in dframe.columns:
-        if dframe[col].dtype == 'float64' or dframe[col].dtype == 'int64':
-            if 'v' in column_dict.keys():
-                column_dict['v'].append(col)
-            else:
-                column_dict['v'] = [col]
+        for col in dframe.columns:
 
-        elif dframe[col].dtype != 'datetime64[ns]': 
-            formatted = format_column(dframe, col)
-            if not isinstance(formatted, int):
+            percent_null = dframe[col].isnull().mean()
+            percent_zero = dframe[col].eq(0).mean()
+            percent_empty = dframe[col].eq('').mean()
+            # Checks whether any of the percentages above fall over the threshold, in which case they will be disregarded
+            if max(percent_null, percent_zero, percent_empty) > validity_threshold:
+                if 'u' in column_dict.keys():
+                    column_dict['u'].append(col)
+                else:
+                    column_dict['u'] = [col]
+            elif dframe[col].dtype == 'float64' or dframe[col].dtype == 'int64':
+                if 'v' in column_dict.keys():
+                    column_dict['v'].append(col)
+                else:
+                    column_dict['v'] = [col]
+
+            elif dframe[col].dtype != 'datetime64[ns]': 
+                formatted = format_column(dframe, col)
+                if not isinstance(formatted, int):
+                    if 'd' in column_dict.keys():
+                        column_dict['d'].append(col)
+                    else:
+                        column_dict['d'] = [col]
+            elif dframe[col].dtype == 'datetime64[ns]': 
                 if 'd' in column_dict.keys():
                     column_dict['d'].append(col)
                 else:
                     column_dict['d'] = [col]
-        elif dframe[col].dtype == 'datetime64[ns]': 
-            if 'd' in column_dict.keys():
-                column_dict['d'].append(col)
-            else:
-                column_dict['d'] = [col]
-        else: # others are miscellaneous
-            if 'm' in column_dict.keys():
-                column_dict['m'].append(col)
-            else:
-                column_dict['m'] = [col]
-    return column_dict
+            else: # others are miscellaneous
+                if 'm' in column_dict.keys():
+                    column_dict['m'].append(col)
+                else:
+                    column_dict['m'] = [col]
+        return column_dict
 
 
 # Given date columns, return a dictionary of the modes of the intervals of each one
@@ -117,7 +127,7 @@ def compare_frequencies(dframe, desired_freq, date_column):
         f_num = int(desired_freq[0])
     # A ValueError means that no numerical indicator exists
     except ValueError:
-        desired_frequency_offset = frequency_multipliers[desired_freq[1:]]
+        desired_frequency_offset = frequency_multipliers[desired_freq]
     # separate numerical indicator to multiply the offset by that amount
     else:
         desired_frequency_offset = frequency_multipliers[desired_freq[1:]]*f_num
@@ -131,7 +141,7 @@ def compare_frequencies(dframe, desired_freq, date_column):
 
 
 # Generates a time series
-def generate_time_series(dframe, frequency, operation=None, value_columns=[], date_column=None): 
+def generate_time_series(dframe, frequency, operation=None, value_columns=[], date_column=None, interpolation_method='linear'): 
     
     if operation and operation not in possible_operations:
         print("Invalid Operation: ", operation)
@@ -149,7 +159,7 @@ def generate_time_series(dframe, frequency, operation=None, value_columns=[], da
         return 
 
     # categorize (and format) the columns of importance
-    cats = categorize_columns(dframe)
+    cats = categorize_columns(dframe, 0.4)
 
     if not is_time_series_compatible(dframe, cats):
         print("A time series cannot be created from this data")
@@ -186,6 +196,7 @@ def generate_time_series(dframe, frequency, operation=None, value_columns=[], da
     resampler = dframe[value_columns].resample(frequency)
     # apply the respective aggregate function(s) to the grouping
     series = resampler.agg(aggs)
+    series[value_columns] = series[value_columns].interpolate(method=interpolation_method)
     return series
 
 
@@ -198,7 +209,7 @@ def analyze(ts):
 
 df = pd.read_csv('datasets/pr_transactions.csv')
 
-ts = generate_time_series(df, 'Y', None, ['Amount'])
+ts = generate_time_series(df, 'D', 'mean')
 if ts is not None:
     print(ts)
     # print(analyze(ts))  # uncomment for different format
