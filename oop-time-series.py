@@ -1,5 +1,4 @@
 import pandas as pd
-import datetime
 import numpy as np
 import math
 from collections import OrderedDict
@@ -16,22 +15,24 @@ class TimeSeries():
     interpolation_method = 'linear'
     validity_threshold = 0.4
 
-    frequency_multipliers = OrderedDict() # stores the intervals between units of each frequency in terms of seconds
-    frequency_multipliers['N'] = 1/1000000000
-    frequency_multipliers['U'] = 1/1000000
-    frequency_multipliers['L'] = 1/1000
-    frequency_multipliers['S'] = 1
-    frequency_multipliers['T'] = 60# minute
-    frequency_multipliers['H'] = 3600 # hour
-    frequency_multipliers['D'] = 86400, # day
-    frequency_multipliers['B'] = 86400,
-    frequency_multipliers['W'] = 7*86400, # week
-    frequency_multipliers['M'] = 30.5*7*86400, # month
-    frequency_multipliers['Q'] = 3*30.5*7*86400,
-    frequency_multipliers['Y'] = 365.25*86400  # year
+    # stores the intervals between units of each frequency in terms of seconds
+    frequency_offsets = { 
+        'N': 1/1000000000,
+        'U': 1/1000000,
+        'L': 1/1000,
+        'S': 1,
+        'T': 60,# minute
+        'H': 3600, # hour
+        'D': 86400, # day
+        'B': 86400,
+        'W': 7*86400, # week
+        'M': 30.5*7*86400, # month
+        'Q': 3*30.5*7*86400,
+        'Y': 365.25*86400  # year
+    }
     
 
-    possible_operations = ['sum', 'mean', 'min', 'max', 'std', 'first', 'last', \
+    operations = ['sum', 'mean', 'min', 'max', 'std', 'first', 'last', \
     'median', 'var', 'sem', 'skew', 'quantile']
 
 
@@ -48,17 +49,17 @@ class TimeSeries():
             isolated_frequency = frequency
         else:
             isolated_frequency = frequency[1:]
-        if isolated_frequency not in self.frequency_multipliers.keys():
+        if isolated_frequency not in self.frequency_offsets.keys():
             print("Invalid frequency")
             return 
 
         if operation:
             self.agg_operations = operation
-        elif operation and operation not in self.possible_operations:
+        elif operation and operation not in self.operations:
             print("Invalid Operation")
             return
         else:
-            self.agg_operations = self.possible_operations
+            self.agg_operations = self.operations
 
         # categorize (and format) the columns of importance
         categories = self.categorize_columns(self.dframe)
@@ -114,30 +115,37 @@ class TimeSeries():
 
 
     # Displays the generated time series
-    def display(self): 
+    def display_time_series(self): 
         # print out the dataframe of the time series
         print(self.time_series)
 
         # Print out the information about the time series
-        print()
-        print(f"Frequency: {self.frequency}")
-        print(f"Value Columns: {self.value_columns}")
-        print(f"Trend: {self.decomposition.trend}")
-        print(f"Seasonality: {self.decomposition.seasonal}")
-        print(f"Residual: {self.decomposition.resid}")
+        # print()
+        # print(f"Frequency: {self.frequency}")
+        # print(f"Value Columns: {self.value_columns}")
+        # print(f"Trend: {self.decomposition.trend}")
+        # print(f"Seasonality: {self.decomposition.seasonal}")
+        # print(f"Residual: {self.decomposition.resid}")
 
+    def plot(self):
+        self.time_series.plot()
         plt.show()
 
+    # returns True if the provided dataframe is a valid time series, False if not
+    def is_time_series(self, dframe):
+        categorized_columns = self.categorize_columns(dframe)
+        if 'd' not in categorized_columns.keys() or 'v' not in categorized_columns.keys():
+            return False
+        return True
 
 
     # Given date columns, return a dictionary of the modes of the intervals of each one
-    def find_date_intervals(self, dframe, d_cols: list):
+    def find_date_intervals(self, dframe, date_cols: list):
         modes = {}
-        for col in d_cols:
+        for col in date_cols:
             diffs = dframe[col].diff()
             # take the mode of the differences in each column
             modes[col] = diffs.mode()[0]
-
         return modes
 
     
@@ -147,10 +155,12 @@ class TimeSeries():
             f_num = int(desired_freq[0])
         # A ValueError means that no numerical indicator exists
         except ValueError:
-            desired_frequency_offset = self.frequency_multipliers[desired_freq]
+            # create an offset using the fixed values of the frequency offset 
+            # dictionary to find the exact amount of seconds
+            desired_frequency_offset = self.frequency_offsets[desired_freq]
         # separate numerical indicator to multiply the offset by that amount
         else:
-            desired_frequency_offset = self.frequency_multipliers[desired_freq[1:]]*f_num
+            desired_frequency_offset = self.frequency_offsets[desired_freq[1:]]*f_num
 
         # Find the most common difference between dates in date_column in seconds
         date_col_mode = self.find_date_intervals(dframe,[date_column])
@@ -159,14 +169,14 @@ class TimeSeries():
         # Now, both values are converted to seconds, so they can be compared
         return desired_frequency_offset >= date_freq_offset
     
-    # Checks the validity of operation and frequency inputs, and 
-    def is_compatible(self, dframe, cat_columns):
-        if 'd' not in cat_columns.keys():
+    # Checks whether or not a dataframe is not
+    def is_compatible(self, dframe, categorized_columns):
+        if 'd' not in categorized_columns.keys():
             return False
 
-        hasContinuousDateColumn, hasNum = False, False
+        has_continuous_date_column, has_num = False, False
         
-        date_columns = cat_columns['d']
+        date_columns = categorized_columns['d']
 
         # check for regular data (i.e. consistent intervals between dates)
         for d in date_columns:
@@ -174,16 +184,16 @@ class TimeSeries():
             interval = diffs.value_counts()
             # If there exist more than 7 different intervals, say that the dates aren't applicable
             if len(interval) > 0 and len(interval) < 7: # TODO check if arrow has a way to do this
-                hasContinuousDateColumn = True
+                has_continuous_date_column = True
                 break
         # check for irregular data (for example, timestamp data) 
             else:
                 self.is_irregular = True
         # check for numerical values
         if any(dframe.dtypes == 'int64') or any(dframe.dtypes == 'float64'):
-            hasNum = True
+            has_num = True
 
-        return (hasContinuousDateColumn and hasNum) or (self.is_irregular and hasNum)
+        return (has_continuous_date_column and has_num) or (self.is_irregular and has_num)
 
 
     # If the dates are irregular, then we downsample them until they become regular
@@ -203,7 +213,7 @@ class TimeSeries():
             return -1
         temporary_conversion = pd.to_datetime(dframe[date_col], errors='coerce', infer_datetime_format=True)
         percent_datetime = temporary_conversion.notnull().mean()
-        if percent_datetime >= 0.9:
+        if percent_datetime >= 0.9: # TODO hardcoded must change
             dframe[date_col] = temporary_conversion
             return dframe[date_col]
         return -1
@@ -253,4 +263,4 @@ class TimeSeries():
 
 df = pd.read_csv('datasets/1979-2021.csv')
 ts = TimeSeries(df, '3Y', 'mean', ['United States(USD)'])
-ts.display()
+ts.display_time_series()
