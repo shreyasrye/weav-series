@@ -1,7 +1,5 @@
 # Weav AI: Time Series Data Handling and Generation
-This page provides a simple run-down of a class written for an implementation of a time series using Pandas for the [Weav AI platform](https://weav.ai/). The provided code is for a `TimeSeries` class that is capable of handling and generating time series data. 
-
-`oop-time-series.py` is the primary implementation of the time series that is object-oriented in nature. There also exists an alternative implementation (as a series of stand-alone functions): `time-series.py`.
+This page provides a simple run-down of some code written for an implementation of a time series using Pandas for the [Weav AI platform](https://weav.ai/). The provided code is for a `TimeSeries` class that is capable of handling and generating time series data. 
 
 ## Prerequisites
 
